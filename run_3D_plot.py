@@ -10,11 +10,15 @@ random.seed(43)
 f = random.uniform(2000, 5000)
 t1 = 940.0
 t2 = 560.0
-h = 1.6
+h1 = 1.6
+h2 = 100.6
+h3 = 1.6
+
+h = [h1,h2,h3]
 n = [random.uniform(-5, 5), random.uniform(1, 11), random.uniform(-5, 5)]
 n = n / np.linalg.norm(n)
 p = [random.uniform(-5, 5), random.uniform(-5, 5) - 10, random.uniform(-5, 5)]
-q = (p+h*n)[0]
+
 c = np.array([[f, 0, t1], [0, f, t2], [0, 0, 1]])
 ax, ay, az = [], [], []
 hx, hy, hz = [], [], []
@@ -29,9 +33,9 @@ for i in range(0, no_points-1):
     ay.append(p[1] + (-n[0]*(ax[i]-p[0])-n[2]*(az[i]-p[2]))/n[1])
 
 for i in range(0, no_points-1):
-    hx.append(([ax[i], ay[i], az[i]]+h*n)[0])
-    hy.append(([ax[i], ay[i], az[i]]+h*n)[1])
-    hz.append(([ax[i], ay[i], az[i]]+h*n)[2])
+    hx.append(([ax[i], ay[i], az[i]]+h[i]*n)[0])
+    hy.append(([ax[i], ay[i], az[i]]+h[i]*n)[1])
+    hz.append(([ax[i], ay[i], az[i]]+h[i]*n)[2])
     sub.append([hx[i]-ax[i], hy[i]-ay[i], hz[i]-az[i]])
 
 #manually construct the projective matrix
@@ -56,7 +60,7 @@ plt3d.plot([ax[2],hx[2]],[ay[2],hy[2]], [az[2],hz[2]], color = 'green')
 plt3d.plot([p[0]], [p[1]], [p[2]], marker='o', markersize=3, color="red")
 plt3d.plot([0], [0], [0], marker='o', markersize=3, color="blue")
 
-pointHead = p + np.array([n[0], n[1], n[2]])*h
+#pointHead = p + np.array([n[0], n[1], n[2]])*h
 
 xx, z = np.meshgrid(range(-20,20), range(-20,20))
 yy =  p[1] + (n[0]*(p[0] - xx) + n[2]*(p[2] - z))/n[1]

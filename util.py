@@ -4,9 +4,65 @@ import numpy as np
 from scipy.stats import norm
 from scipy.stats import multivariate_normal
 import mpmath
+import torch
 
 import scipy
 import hyper_geo
+
+'''
+p is the point to project
+p0 is a point on the plane (one of the points defining the quadrilateral, their centroid...)
+u is the unit normal vector of the plane
+'''
+def plane_proj(u, p, p0):
+    #projected_point = p - torch.dot(p - p0, u) * u
+    projected_point = p - torch.mul((torch.unsqueeze(u, dim = 0) @  (p - torch.unsqueeze(p0, dim = 1).repeat(1, p.shape[1]))), torch.transpose(torch.unsqueeze(u, dim = 0).repeat(p.shape[1], 1), 0 , 1))
+
+    return projected_point
+
+def ankle_calibration(p_2d, p_3d, t1, t2):
+
+    fx_array = []
+    fy_array = []
+
+    for i in range(p_3d.shape[1]):
+
+        fx_array.append(p_3d[2][i]*(p_2d[i][0] - t1)/p_3d[0][i])
+        fy_array.append(p_3d[2][i]*(p_2d[i][1] - t2)/p_3d[1][i])
+
+    #print(fx_array)
+    #print(fy_array)
+    fx = torch.stack(fx_array).mean()
+    fy = torch.stack(fy_array).mean()
+
+    #print(fx, fy, " focals")
+    return fx, fy
+
+def plane_ray_intersection_torch(x_imcoord, y_imcoord, cam_inv, normal, init_point):
+    """ 
+    Recovers the 3d coordinates from 2d by computing the intersection between the 2d point's ray and the plane
+    
+    Parameters: x_imcoord: float list or np.array
+                    x coordinates in camera coordinates
+                y_imcoord: float list or np.array
+                    y coordinates in camera coordinates
+                cam_inv: (3,3) np.array
+                    inverse camera intrinsic matrix
+                normal: (3,) np.array
+                    normal vector of the plane
+                init_point: (3,) np.array
+                    3d point on the plane used to initalize the ground plane
+    Returns:    ray: (3,) np.array
+                    3d coordinates of (x_imcoord, y_imcoord)
+    """
+    point_2d = torch.stack((x_imcoord, y_imcoord, torch.ones(x_imcoord.shape[0])))
+    
+    ray = cam_inv @ point_2d
+    #print(torch.unsqueeze(normal, dim = 0).shape, ray.shape, "heqwqewqeweqweqw qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq")
+    normal_dot_ray = torch.matmul(torch.unsqueeze(normal, dim = 0), ray) + 1e-15
+    
+    scale = abs(torch.div(torch.dot(normal, init_point).repeat(x_imcoord.shape[0]), normal_dot_ray))
+    return scale*ray
 
 #This function is used to plot the closed form pdf
 def estimator_closed_form_pdf(u, v, t_1, t_2, m1, v1, start, end, itr):

@@ -6,6 +6,10 @@ import util
 from datetime import datetime
 import os
 import hyper_geo
+import heights
+
+import scipy
+
 today = datetime.now()
 
 
@@ -76,11 +80,25 @@ for j in range(0, 1):
         hv.append(np.dot(c, np.array([[hx[i]], [hy[i]], [hz[i]]]))[1].item())
         hw.append(np.dot(c, np.array([[hx[i]], [hy[i]], [hz[i]]]))[2].item())
 
+        print(hw[i], " HWWWWWWWWWWWWWWWWWWWWWWWWWWW")
         hu[i] = hu[i]/hw[i]
         hv[i] = hv[i]/hw[i]
         hw[i] = 1
 
     #Constructs DLT matrix
+    print(ax)
+    print(ay)
+    print(az, " 3D ASDASSDADDDD")
+
+    print(hx)
+    print(hy)
+    print(hz, " 3D HEADDD ASDASSDADDDD")
+
+    print(au)
+    print(av, " 2D ASDASSDADDDD")
+
+    print(hu)
+    print(hv, " head 2D ASDASSDADDDD")
     C = np.zeros([6,6], dtype = float)
     C[0] = [0, -1, hv[0], hv[0] - av[0],0,0]
     C[1] = [1, 0, -hu[0], au[0] - hu[0],0,0]
