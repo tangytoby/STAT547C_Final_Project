@@ -128,7 +128,7 @@ for j in range(0, 1):
     print(hu)
     print(hv, " head 2D ASDASSDADDDD")
     '''
-    termination = 1
+    termination = 10000
 
     #MODIFY THIS TO USE MORE THAN 3 POINTS!!!!!!!!!
     # NEW PLAN, TAKE AVERAGE FOCAL AND NORMAL, USE THAT FOR ALL REPROJECTIONS, THEN OPTIMIZE HEIGHT!!!!!!!!!!!
@@ -150,7 +150,25 @@ for j in range(0, 1):
     Y = []
     Z = []
     V = []
-    
+
+    x0 = np.random.normal(1.6, 1, no_points - 1)
+
+    #x0 = x0 - np.mean(x0) + 1.6
+
+    #print(np.mean(x0), "np mean")
+
+    result, err = heights.pytorch_average_plane_optimize_height(x0, vargs, term = termination)
+
+    err_array = []
+
+    for i in range(len(err)):
+        err_array.append(err[i])
+
+    ax1.set_yscale('log')
+    ax1.set_xscale('log')
+    ax1.plot(err_array)
+    fig1.savefig('./plots/run_' + name + "/" + 'error_curve.png')
+    '''
     for i in range(10000):
 
         x0 = np.random.normal(1.6, 1e-8*i, no_points - 1)
@@ -162,14 +180,14 @@ for j in range(0, 1):
         result, err = heights.pytorch_average_plane_optimize_height(x0, vargs, term = termination)
 
         params.append(np.mean(np.abs(np.array(result) - np.array(h))))
-        print(err, np.mean(np.abs(np.array(result) - np.array(h))), " resultsss")
-        error_array.append(err)
+        print(err[0].item(), np.mean(np.abs(np.array(result) - np.array(h))), " resultsss")
+        error_array.append(err[0].item())
 
         X.append(np.abs(x0[0] - h[0]))
         Y.append(np.abs(x0[1] - h[1]))
         Z.append(np.abs(x0[2] - h[2]))
         V.append(err)
-
+    
     ax0.set_yscale('log')
     ax0.set_xscale('log')
     ax0.scatter(params, error_array)
@@ -194,12 +212,4 @@ for j in range(0, 1):
     plt.show()
 
     plt.close('all')
-    #result = heights.pytorch_average_optimize_height(h, vargs, term = termination)
-    #result = scipy.optimize.minimize(heights.function_optimize_height, x0, vargs)
     '''
-    for r in range(len(result)):
-        print(result[r]['params'], " RESULT")
-
-    print(h, " HEIGHT GROUND TRUTH")
-    '''
-    #heights.optimize_height(au, hu, av, hv, t1, t2)

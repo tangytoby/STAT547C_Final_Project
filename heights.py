@@ -11,7 +11,7 @@ import hyper_geo
 import util
 import torch.nn as nn
 
-def pytorch_average_plane_optimize_height(x, args, term = 10, height_lr = 1e-8, window_size = 3):
+def pytorch_average_plane_optimize_height(x, args, term = 10, height_lr = 1e-4, window_size = 3):
     
     au, hu, av, hv, t_1, t_2 = args
 
@@ -20,9 +20,14 @@ def pytorch_average_plane_optimize_height(x, args, term = 10, height_lr = 1e-8, 
         h_params.append({'params': torch.nn.Parameter(torch.tensor([h_init]).double()), 'lr': height_lr})
 
     #print(h_params)
+    '''
     optimizer = torch.optim.SGD(
         h_params
     , weight_decay=0.0)
+    '''
+    optimizer = torch.optim.Adam(
+        h_params
+    )
 
     error_array = []
     
@@ -183,7 +188,7 @@ def pytorch_average_plane_optimize_height(x, args, term = 10, height_lr = 1e-8, 
         
         error = loss(head_2d, torch.transpose(torch.stack(head_2d_array), 0, 1)[:2, :])
 
-        error_array.append(error)
+        error_array.append(error.item())
         #error = torch.mean(torch.stack(error_head), dim=0)
         optimizer.zero_grad()
         error.backward(retain_graph=True)
@@ -194,11 +199,25 @@ def pytorch_average_plane_optimize_height(x, args, term = 10, height_lr = 1e-8, 
             for p in range(len(h_params)):
                 h_params[p]['params'][0].clamp_(0, 2.5)
 
+        '''
+        h_all = []
+        with torch.no_grad():
+            for p in range(len(h_params)):
+                h_all.append(h_params[p]['params'][0])
+            
+            h_mean = torch.mean(torch.tensor(h_array))
+
+            for p in range(len(h_params)):
+                h_params[p]['params'][0] = h_params[p]['params'][0] - h_mean + 1.6
+        '''
         #print("**************************")
         #print(error, torch.mean(torch.stack(f_array), dim=0), " error")
+     
+            
 
-
-        #print(h_params, " h params")
+        #x0 = x0 - np.mean(x0) + 1.6
+        print(h_params, " h params")
+        print(fx, fy, " focal lengths")
         #print(error_array[0].item(), "errror")
         #stop
     #print(f_array, " f _ arrat")
@@ -209,7 +228,7 @@ def pytorch_average_plane_optimize_height(x, args, term = 10, height_lr = 1e-8, 
         h_return.append(h_params[p]['params'][0].item())
 
     #print(h_return, " h return")
-    return h_return, error_array[0].item()
+    return h_return, error_array
 
 def pytorch_average_optimize_height(x, args, term = 10, height_lr = 0.001, window_size = 3):
     
