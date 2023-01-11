@@ -10,8 +10,9 @@ import scipy
 import hyper_geo
 import util
 import torch.nn as nn
+import random
 
-def pytorch_average_plane_optimize_height(x, args, term = 10, height_lr = 1e-4, window_size = 3):
+def pytorch_average_random_optimize_height(x, args, term = 10, height_lr = 1e-6, window_size = 3):
     
     au, hu, av, hv, t_1, t_2 = args
 
@@ -25,11 +26,251 @@ def pytorch_average_plane_optimize_height(x, args, term = 10, height_lr = 1e-4, 
         h_params
     , weight_decay=0.0)
     '''
+    
     optimizer = torch.optim.Adam(
         h_params
     )
-
+    
     error_array = []
+    fx_array = []
+    fy_array = []
+
+    best_cal = {}
+    best_error = np.inf
+    
+    for i in range(term):
+
+        c1_array = []
+        c2_array = []
+        c3_array = []
+        c4_array = []
+        c5_array = []
+
+        p_2d = []
+        point_3d = []
+
+        h_array = []
+
+        head_2d_array = []
+
+        #print(i, " HELLOOOOOOOOOOOOOOO")
+        f_array = []
+        #for j in range(len(h_params) - window_size + 1):
+        j = 0
+        samp = random.sample(range(len(h_params)), 3)
+
+        ankle_2d_w1 = torch.tensor([au[samp[0]], av[samp[0]], 1.0]).double()
+        ankle_2d_w2 = torch.tensor([au[samp[1]], av[samp[1]], 1.0]).double()
+        ankle_2d_w3 = torch.tensor([au[samp[2]], av[samp[2]], 1.0]).double()
+
+        head_2d_w1 = torch.tensor([hu[samp[0]], hv[samp[0]], 1.0]).double()
+        head_2d_w2 = torch.tensor([hu[samp[1]], hv[samp[1]], 1.0]).double()
+        head_2d_w3 = torch.tensor([hu[samp[2]], hv[samp[2]], 1.0]).double()
+        
+        head_2d_array.append(head_2d_w1)
+        head_2d_array.append(head_2d_w2)
+        head_2d_array.append(head_2d_w3)
+
+        h1_init = h_params[j:j + window_size][0]['params'][0]
+        h2_init = h_params[j:j + window_size][1]['params'][0]
+        h3_init = h_params[j:j + window_size][2]['params'][0]
+
+        h1 = h1_init - (h1_init + h2_init + h3_init)/3.0 + 1.6 
+        h2 = h2_init - (h1_init + h2_init + h3_init)/3.0 + 1.6 
+        h3 = h3_init - (h1_init + h2_init + h3_init)/3.0 + 1.6 
+
+        h_array.append(h1)
+        h_array.append(h2)
+        h_array.append(h3)
+
+        c1, c2, c3, c4, c5 = coef([list(np.array(au)[samp]), list(np.array(hu)[samp])], [list(np.array(av)[samp]), list(np.array(hv)[samp])], t_1, t_2, [h1, h2, h3]) # compute camera parameters
+
+        f_squared = ((-c1*(c4*(list(np.array(au)[samp])[0] - t_1) - c5*(list(np.array(au)[samp])[1] - t_1)) - c2*(c4*(list(np.array(av)[samp])[0] - t_2) - c5*(list(np.array(av)[samp])[1] - t_2)))/(c3*(c4 - c5)))
+        f = torch.sqrt(torch.abs(f_squared))
+
+        n1 = c1
+        n2 = c2
+        n3 = f*c3
+
+        n = torch.squeeze(torch.stack([n1, n2, n3]))
+
+        lda = torch.norm(n)
+        n = n/lda
+
+        z1 = (f*c4/lda)
+        z2 = (f*c5/lda)
+        z3 = (-1*f/lda)
+
+        torch.stack([f, torch.zeros(1).double(), torch.tensor([t_1]).double()])
+        torch.stack([ torch.stack([f, torch.zeros(1).double(), torch.tensor([t_1]).double()]),  torch.stack([torch.zeros(1).double(), f, torch.tensor([t_2]).double()]),  torch.stack([torch.zeros(1).double(), torch.zeros(1).double(), torch.ones(1).double()])])
+
+        cam_matrix = torch.squeeze(torch.stack([ torch.stack([f, torch.zeros(1).double(), torch.tensor([t_1]).double()]),  torch.stack([torch.zeros(1).double(), f, torch.tensor([t_2]).double()]),  torch.stack([torch.zeros(1).double(), torch.zeros(1).double(), torch.ones(1).double()])]))
+        
+        cam_inv = torch.inverse(cam_matrix) 
+        
+        ankle_3d1 = (cam_inv @ ankle_2d_w1)*torch.abs(z1)
+        ankle_3d2 = (cam_inv @ ankle_2d_w2)*torch.abs(z2)
+        ankle_3d3 = (cam_inv @ ankle_2d_w3)*torch.abs(z3)
+
+        point_3d.append(torch.unsqueeze(ankle_3d1, dim = 0))
+        point_3d.append(torch.unsqueeze(ankle_3d2, dim = 0))
+        point_3d.append(torch.unsqueeze(ankle_3d3, dim = 0))
+
+        f_array.append(f)
+        p_2d.append(ankle_2d_w1)
+        p_2d.append(ankle_2d_w2)
+        p_2d.append(ankle_2d_w3)
+        ###########
+
+        # subtract out the centroid and take the SVD
+
+        points = torch.transpose(torch.cat(point_3d), 0, 1)
+
+        plane_center = torch.mean(points, dim=1)
+
+        svd = torch.svd(points - torch.unsqueeze(plane_center, dim = 1).repeat(1, points.shape[1]))
+        
+        # Extract the left singular vectors
+        left = svd[0]
+
+        # the corresponding left singular vector is the normal vector of the best-fitting plane
+
+        normal = left[:, -1]
+
+        normal = normal/torch.norm(normal)
+
+        p_3d = util.plane_proj(normal, points, plane_center)
+
+        fx, fy = util.ankle_calibration(p_2d, p_3d, t_1, t_2)
+
+        #print(fx, torch.zeros(1), torch.tensor(t_1), " hiiiasdasdasdads")
+        #print(torch.unsqueeze(fx, dim = 0), " fx")
+        #torch.stack([fx, torch.zeros(1), torch.tensor(t_1)])
+        #torch.stack([torch.zeros(1), fy, torch.tensor(t_2)])
+        #torch.stack([torch.zeros(1), torch.zeros(1), torch.ones(1)])
+        ######
+        #print(fx, fy, " hellooo f")
+        cam_matrix = torch.squeeze(torch.stack([ torch.stack([torch.unsqueeze(fx, dim = 0), torch.zeros(1), torch.tensor([t_1])]),  torch.stack([torch.zeros(1), torch.unsqueeze(fy, dim = 0), torch.tensor([t_2])]),  torch.stack([torch.zeros(1), torch.zeros(1), torch.ones(1)])])).double()
+        cam_inv = torch.inverse(cam_matrix) 
+        ######
+        #print(p_3d.shape, torch.stack(h_array).shape, torch.unsqueeze(normal, dim = 0).repeat(len(h_array), 1).shape, " shapes")
+        heads_3d = torch.squeeze(torch.transpose(p_3d, 0, 1) + torch.mul(torch.unsqueeze(torch.stack(h_array), dim = 0), torch.unsqueeze(normal, dim = 0).repeat(len(h_array), 1)))
+        
+        head_2d = (cam_matrix @ torch.transpose(heads_3d, 0, 1))
+        
+        head_2d = torch.div(head_2d[:2, :], head_2d[2, :]) 
+
+        #print(torch.stack(head_2d_array).shape, " STACK H ARRAY")
+        error_head = torch.transpose(torch.stack(head_2d_array), 0, 1)[:2, :] - head_2d
+        '''
+        print("********************")
+        print(head_2d)
+        print(torch.transpose(torch.stack(head_2d_array), 0, 1)[:2, :])
+        print("********************")
+        print(head_2d.shape, " SHAPEEEEEEE")
+        print(heads_3d)
+        print(heads_3d.shape, " heads_3d.shapeee")
+        print(error_head, " errpor head")
+        '''
+        #COMPUTE FOCAL LENGTH HERE FROM THE PLANE !!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        # PROBABLY HAVE TO SOLVE FOR THE FOCAL LENGTH GIVEN PLANE
+
+
+        #print("before error comp")
+        
+        loss = nn.MSELoss()
+
+        #print(torch.cat(point_3d).shape)
+        #print(p_3d.shape, " p 3d")
+
+        #plane_error = loss(torch.cat(point_3d), torch.transpose(p_3d, 0, 1))
+
+        #print(plane_error, " plane error")
+        #stop
+        
+        error_head = loss(head_2d, torch.transpose(torch.stack(head_2d_array), 0, 1)[:2, :])
+        
+        #print(head_2d)
+        #print(torch.transpose(torch.stack(head_2d_array), 0, 1)[:2, :])
+
+        #stop
+        #error = plane_error + error_head
+        error = error_head#plane_error
+
+        if best_error > error.item(): 
+            best_error = error.item()
+            best_cal = {'cam': cam_matrix, 'normal': normal, 'plane_center': plane_center}
+        #print(plane_error, error_head)
+        #stop
+        #error_array.append(plane_error.item())
+        error_array.append(error.detach().cpu().item())
+        #error = torch.mean(torch.stack(error_head), dim=0)
+        optimizer.zero_grad()
+        #error.backward(retain_graph=True)
+        error.backward()
+
+        optimizer.step()
+
+        with torch.no_grad():
+            for p in range(len(h_params)):
+                h_params[p]['params'][0].clamp_(1, 2.5)
+
+        
+        #h_all = []
+
+        '''
+        for p in range(len(h_params)):
+            h_all.append(h_params[p]['params'][0])
+        
+        h_mean = torch.mean(torch.tensor(h_array))
+
+        for p in range(len(h_params)):
+            h_params[p]['params'][0] = h_params[p]['params'][0] - h_mean + 1.6
+        '''
+        
+        #print("**************************")
+        #print(error, torch.mean(torch.stack(f_array), dim=0), " error")
+     
+            
+        fx_array.append(fx.detach().cpu().item())
+        fy_array.append(fy.detach().cpu().item())
+        #x0 = x0 - np.mean(x0) + 1.6
+        #print(h_params, " h params")
+        #print(fx, fy, " focal lengths")
+        #print(error_array[0].item(), "errror")
+        #stop
+    #print(f_array, " f _ arrat")
+    
+    h_return = []
+
+    for p in range(len(h_params)):
+        h_return.append(h_params[p]['params'][0].item())
+
+    #print(h_return, " h return")
+    return h_return, error_array, fx_array, fy_array, best_cal, best_error
+
+def pytorch_average_plane_optimize_height(x, args, term = 10, height_lr = 1e-3, window_size = 3):
+    
+    au, hu, av, hv, t_1, t_2 = args
+
+    h_params = []
+    for h_init in x:
+        h_params.append({'params': torch.nn.Parameter(torch.tensor([h_init]).double()), 'lr': height_lr})
+
+    #print(h_params)
+    '''
+    optimizer = torch.optim.SGD(
+        h_params
+    , weight_decay=0.0)
+    '''
+    
+    optimizer = torch.optim.Adam(
+        h_params
+    )
+    
+    error_array = []
+    fx_array = []
+    fy_array = []
     
     for i in range(term):
 
@@ -62,9 +303,13 @@ def pytorch_average_plane_optimize_height(x, args, term = 10, height_lr = 1e-4, 
             head_2d_array.append(head_2d_w2)
             head_2d_array.append(head_2d_w3)
 
-            h1 = h_params[j:j + window_size][0]['params'][0]
-            h2 = h_params[j:j + window_size][1]['params'][0]
-            h3 = h_params[j:j + window_size][2]['params'][0]
+            h1_init = h_params[j:j + window_size][0]['params'][0]
+            h2_init = h_params[j:j + window_size][1]['params'][0]
+            h3_init = h_params[j:j + window_size][2]['params'][0]
+
+            h1 = h1_init - (h1_init + h2_init + h3_init)/3.0 + 1.6 
+            h2 = h2_init - (h1_init + h2_init + h3_init)/3.0 + 1.6 
+            h3 = h3_init - (h1_init + h2_init + h3_init)/3.0 + 1.6 
 
             h_array.append(h1)
             h_array.append(h2)
@@ -185,39 +430,60 @@ def pytorch_average_plane_optimize_height(x, args, term = 10, height_lr = 1e-4, 
         #print("before error comp")
         
         loss = nn.MSELoss()
-        
-        error = loss(head_2d, torch.transpose(torch.stack(head_2d_array), 0, 1)[:2, :])
 
-        error_array.append(error.item())
+        #print(torch.cat(point_3d).shape)
+        #print(p_3d.shape, " p 3d")
+
+        #plane_error = loss(torch.cat(point_3d), torch.transpose(p_3d, 0, 1))
+
+        #print(plane_error, " plane error")
+        #stop
+        
+        error_head = loss(head_2d, torch.transpose(torch.stack(head_2d_array), 0, 1)[:2, :])
+        
+        #print(head_2d)
+        #print(torch.transpose(torch.stack(head_2d_array), 0, 1)[:2, :])
+
+        #stop
+        #error = plane_error + error_head
+        error = error_head#plane_error
+        #print(plane_error, error_head)
+        #stop
+        #error_array.append(plane_error.item())
+        error_array.append(error.detach().cpu().item())
         #error = torch.mean(torch.stack(error_head), dim=0)
         optimizer.zero_grad()
-        error.backward(retain_graph=True)
+        #error.backward(retain_graph=True)
+        error.backward()
 
         optimizer.step()
 
         with torch.no_grad():
             for p in range(len(h_params)):
-                h_params[p]['params'][0].clamp_(0, 2.5)
+                h_params[p]['params'][0].clamp_(1, 2.5)
+
+        
+        #h_all = []
 
         '''
-        h_all = []
-        with torch.no_grad():
-            for p in range(len(h_params)):
-                h_all.append(h_params[p]['params'][0])
-            
-            h_mean = torch.mean(torch.tensor(h_array))
+        for p in range(len(h_params)):
+            h_all.append(h_params[p]['params'][0])
+        
+        h_mean = torch.mean(torch.tensor(h_array))
 
-            for p in range(len(h_params)):
-                h_params[p]['params'][0] = h_params[p]['params'][0] - h_mean + 1.6
+        for p in range(len(h_params)):
+            h_params[p]['params'][0] = h_params[p]['params'][0] - h_mean + 1.6
         '''
+        
         #print("**************************")
         #print(error, torch.mean(torch.stack(f_array), dim=0), " error")
      
             
-
+        fx_array.append(fx.detach().cpu().item())
+        fy_array.append(fy.detach().cpu().item())
         #x0 = x0 - np.mean(x0) + 1.6
-        print(h_params, " h params")
-        print(fx, fy, " focal lengths")
+        #print(h_params, " h params")
+        #print(fx, fy, " focal lengths")
         #print(error_array[0].item(), "errror")
         #stop
     #print(f_array, " f _ arrat")
@@ -228,7 +494,7 @@ def pytorch_average_plane_optimize_height(x, args, term = 10, height_lr = 1e-4, 
         h_return.append(h_params[p]['params'][0].item())
 
     #print(h_return, " h return")
-    return h_return, error_array
+    return h_return, error_array, fx_array, fy_array
 
 def pytorch_average_optimize_height(x, args, term = 10, height_lr = 0.001, window_size = 3):
     

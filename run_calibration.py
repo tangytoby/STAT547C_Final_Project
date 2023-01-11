@@ -34,7 +34,7 @@ h1 = 1.6 #height
 h2 = 1.6
 h3 = 1.6
 
-h = np.random.normal(1.6, 0, no_points - 1)
+h = np.random.normal(1.6, 1, no_points - 1)
 n = [random.uniform(-5, 5), random.uniform(1, 11), random.uniform(-5, 5)] #normal vecetor
 n = n / np.linalg.norm(n)
 p = [random.uniform(-5, 5), random.uniform(-5, 5) - 10, random.uniform(-5, 5)] #plane center
@@ -50,6 +50,8 @@ fig, ax0 = plt.subplots(1, 1)
 fig1, ax1 = plt.subplots(1, 1)
 
 fig2, ax2 = plt.subplots(1, 1)
+
+fig3, ax3 = plt.subplots(1, 1)
 
 pixel_error = np.random.normal(0, 3, (2, no_points - 1))
 for j in range(0, 1):
@@ -128,7 +130,7 @@ for j in range(0, 1):
     print(hu)
     print(hv, " head 2D ASDASSDADDDD")
     '''
-    termination = 10000
+    termination = 100000
 
     #MODIFY THIS TO USE MORE THAN 3 POINTS!!!!!!!!!
     # NEW PLAN, TAKE AVERAGE FOCAL AND NORMAL, USE THAT FOR ALL REPROJECTIONS, THEN OPTIMIZE HEIGHT!!!!!!!!!!!
@@ -151,23 +153,44 @@ for j in range(0, 1):
     Z = []
     V = []
 
-    x0 = np.random.normal(1.6, 1, no_points - 1)
+    x0 = np.random.normal(1.6, 0, no_points - 1)
 
     #x0 = x0 - np.mean(x0) + 1.6
 
     #print(np.mean(x0), "np mean")
 
-    result, err = heights.pytorch_average_plane_optimize_height(x0, vargs, term = termination)
+    result, err, fx_array, fy_array = heights.pytorch_average_plane_optimize_height(x0, vargs, term = termination)
 
     err_array = []
 
+    fx_error_array = []
+    fy_error_array = []
+
     for i in range(len(err)):
         err_array.append(err[i])
+
+    for i in range(len(fx_array)):
+        fx_error_array.append(np.abs(fx_array[i] - f))
+
+    for i in range(len(fy_array)):
+        fy_error_array.append(np.abs(fy_array[i] - f))
 
     ax1.set_yscale('log')
     ax1.set_xscale('log')
     ax1.plot(err_array)
     fig1.savefig('./plots/run_' + name + "/" + 'error_curve.png')
+
+    ax2.set_yscale('log')
+    ax2.set_xscale('log')
+    ax2.plot(fx_error_array)
+    fig2.savefig('./plots/run_' + name + "/" + 'fx_curve.png')
+
+    ax3.set_yscale('log')
+    ax3.set_xscale('log')
+    ax3.plot(fy_error_array)
+    fig3.savefig('./plots/run_' + name + "/" + 'fy_curve.png')
+
+    
     '''
     for i in range(10000):
 
